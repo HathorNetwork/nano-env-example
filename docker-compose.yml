@@ -1,0 +1,122 @@
+version: "3.9"
+services:
+
+  # Traefik reverse proxy
+  traefik:
+    image: traefik:v3.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--log.level=INFO"
+    ports:
+      - "1337:80"
+      - "1338:443"
+      - "1339:8080" # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - hathor-privnet
+
+  # For more information on these configs, refer to:
+  # https://github.com/HathorNetwork/rfcs/blob/master/text/0033-private-network-guide.md
+
+  fullnode:
+    image: "hathornetwork/hathor-core:experimental-nano-preview-202505211850-python3.12"
+    command: [
+      "run_node",
+      "--listen", "tcp:40404",
+      "--status", "8080",
+      "--test-mode-tx-weight",
+      "--wallet-index",
+      "--allow-mining-without-peers",
+      "--unsafe-mode", "nano-testnet-alpha",
+      "--data", "./tmp",
+      "--nc-indices",
+    ]
+    environment:
+      HATHOR_CONFIG_YAML: privnet/conf/privnet.yml
+    volumes:
+      - type: bind
+        source: ./
+        target: /privnet/conf
+    networks:
+      - hathor-privnet
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; import json; r = urllib.request.urlopen('http://localhost:8080/v1a/status'); body = json.loads(r.read()); assert body['server']['state'] == 'READY'"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.fullnode.rule=Host(`fullnode.localhost`) || Host(`fullnode.hathor.local`)"
+      - "traefik.http.routers.fullnode.entrypoints=web"
+      - "traefik.http.services.fullnode.loadbalancer.server.port=8080"
+      # CORS middleware
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE,PATCH"
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowheaders=*"
+      - "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.cors.headers.accesscontrolmaxage=100"
+      - "traefik.http.middlewares.cors.headers.addvaryheader=true"
+      - "traefik.http.routers.fullnode.middlewares=cors"
+
+  tx-mining-service:
+    platform: linux/x86_64
+    image:
+      ${HATHOR_LIB_INTEGRATION_TESTS_TXMINING_IMAGE:-hathornetwork/tx-mining-service}
+    depends_on:
+      fullnode:
+        condition: service_healthy
+    command: [
+      "http://fullnode:8080",
+      "--stratum-port=8034",
+      "--api-port=8035"
+    ]
+    networks:
+      - hathor-privnet
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tx-mining.rule=Host(`mining.localhost`) || Host(`mining.hathor.local`)"
+      - "traefik.http.routers.tx-mining.entrypoints=web"
+      - "traefik.http.services.tx-mining.loadbalancer.server.port=8035"
+      - "traefik.http.routers.tx-mining.middlewares=cors"
+
+  hathor-wallet:
+    image: hathornetwork/hathor-wallet-headless
+    depends_on:
+      fullnode:
+        condition: service_healthy
+    command: [
+      "--seed_default", "avocado spot town typical traffic vault danger century property shallow divorce festival spend attack anchor afford rotate green audit adjust fade wagon depart level",
+      "--network", "testnet",
+      "--server", "http://fullnode:8080/v1a/",
+      "--tx_mining_url", "http://tx-mining-service:8035/"
+    ]
+    networks:
+      - hathor-privnet
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wallet.rule=Host(`wallet.localhost`) || Host(`wallet.hathor.local`)"
+      - "traefik.http.routers.wallet.entrypoints=web"
+      - "traefik.http.services.wallet.loadbalancer.server.port=8000"
+      - "traefik.http.routers.wallet.middlewares=cors"
+
+  cpuminer:
+    image: hathornetwork/cpuminer
+    depends_on:
+      - tx-mining-service
+    command: [
+      "-a", "sha256d",
+      "--coinbase-addr", "WTjhJXzQJETVx7BVXdyZmvk396DRRsubdw", # Refer to test-utils-integration.js, WALLET_CONSTANTS
+      "-o", "stratum+tcp://tx-mining-service:8034",
+      "--retry-pause", "5", # 5 seconds between retries
+      "-t", "1" # Number of threads used to mine
+    ]
+    networks:
+      - hathor-privnet
+
+networks:
+  hathor-privnet:
+
