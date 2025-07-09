@@ -194,8 +194,7 @@ class Bet(Blueprint):
         address = Address(ctx.address)
         allowed = self.get_max_withdrawal(address)
         if action.amount > allowed:
-            raise InsufficientBalance(
-                f'withdrawal amount is greater than available (max: {allowed})')
+            raise InsufficientBalance(f'withdrawal amount is greater than available (max: {allowed})')
         if address not in self.withdrawals:
             self.withdrawals[address] = action.amount
         else:
@@ -220,6 +219,5 @@ class Bet(Blueprint):
         address_total = self.bets_address.get((self.final_result, address), 0)
         percentage = address_total / result_total
         return Amount(floor(percentage * self.total))
-
 
 __blueprint__ = Bet
