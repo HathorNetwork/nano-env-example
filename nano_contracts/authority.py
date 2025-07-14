@@ -19,17 +19,14 @@ from hathor.nanocontracts.types import (
     NCAction,
     NCDepositAction,
     NCGrantAuthorityAction,
-    NCInvokeAuthorityAction,
+    NCAcquireAuthorityAction,
     NCWithdrawalAction,
     TokenUid,
-    is_action_type,
     public,
 )
 
-
 class TooManyActions(NCFail):
     pass
-
 
 class AuthorityBlueprint(Blueprint):
     def _get_action(self, ctx: Context) -> NCAction:
@@ -43,23 +40,37 @@ class AuthorityBlueprint(Blueprint):
         # Deposit so it can have funds to pay token deposit fee
         # for create token method
         action = self._get_action(ctx)
-        assert is_action_type(action, NCDepositAction)
+        assert isinstance(action, NCDepositAction)
 
     @public(allow_withdrawal=True)
     def create_token(self, ctx: Context) -> None:
         # Withdrawal to pay for token creation
         action = self._get_action(ctx)
-        assert is_action_type(action, NCWithdrawalAction)
+        assert isinstance(action, NCWithdrawalAction)
 
     @public(allow_grant_authority=True)
     def grant_authority(self, ctx: Context) -> None:
         action = self._get_action(ctx)
-        assert is_action_type(action, NCGrantAuthorityAction)
+        assert isinstance(action, NCGrantAuthorityAction)
 
-    @public(allow_invoke_authority=True)
-    def invoke_authority(self, ctx: Context) -> None:
+    @public(allow_acquire_authority=True)
+    def acquire_authority(self, ctx: Context) -> None:
         action = self._get_action(ctx)
-        assert is_action_type(action, NCInvokeAuthorityAction)
+        assert isinstance(action, NCAcquireAuthorityAction)
+
+    @public
+    def create_token_no_deposit(self, ctx: Context) -> None:
+        # User will pay for token deposit
+        if len(ctx.actions) != 0:
+            raise NCFail('expect no actions')
+
+    @public(allow_deposit=True, allow_grant_authority=True)
+    def deposit_and_grant(self, ctx: Context, token_uid: TokenUid) -> None:
+        if len(ctx.actions) != 1:
+            raise NCFail('expect actions for a single token.')
+
+        if len(ctx.actions[token_uid]) != 2:
+            raise NCFail('expect two actions.')
 
     @public
     def mint(self, ctx: Context, token_uid: TokenUid, amount: int) -> None:
@@ -71,8 +82,7 @@ class AuthorityBlueprint(Blueprint):
 
     @public
     def revoke(self, ctx: Context, token_uid: TokenUid, revoke_mint: bool, revoke_melt: bool) -> None:
-        self.syscall.revoke_authorities(
-            token_uid=token_uid, revoke_mint=revoke_mint, revoke_melt=revoke_melt)
+        self.syscall.revoke_authorities(token_uid=token_uid, revoke_mint=revoke_mint, revoke_melt=revoke_melt)
 
 
 __blueprint__ = AuthorityBlueprint

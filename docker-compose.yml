@@ -1,4 +1,3 @@
-version: "3.9"
 services:
 
   # Traefik reverse proxy
@@ -24,7 +23,7 @@ services:
   # https://github.com/HathorNetwork/rfcs/blob/master/text/0033-private-network-guide.md
 
   fullnode:
-    image: "hathornetwork/hathor-core:experimental-nano-preview-202505211850-python3.12"
+    image: "hathornetwork/hathor-core:experimental-nano-preview-924fafb5-python3.12"
     command: [
       "run_node",
       "--listen", "tcp:40404",
@@ -34,7 +33,8 @@ services:
       "--allow-mining-without-peers",
       "--unsafe-mode", "nano-testnet-alpha",
       "--data", "./tmp",
-      "--nc-indices",
+      "--nc-indexes",
+      "--enable-event-queue",
     ]
     environment:
       HATHOR_CONFIG_YAML: privnet/conf/privnet.yml
